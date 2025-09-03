@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Transcript Generator</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; max-width: 800px; margin: 32px auto; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    #spinner { display: none; }
+    pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; border-radius: 8px; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Generate Transcript</h1>
+
+  <form id="transcriptForm" method="post" action="/transcript">
+    <div class="row">
+      <input type="text" id="url" name="url" placeholder="Paste video/page URL" size="60" required />
+      <button type="submit" id="generateBtn">Generate Transcript</button>
+      <button type="button" id="cancelBtn" disabled>Cancel</button>
+      <span id="spinner" class="muted">Loading…</span>
+    </div>
+  </form>
+
+  <p class="muted" id="status"></p>
+
+  <h2>Transcript</h2>
+  <pre id="result"></pre>
+
+  <script>
+    const form = document.getElementById("transcriptForm");
+    const generateBtn = document.getElementById("generateBtn");
+    const cancelBtn = document.getElementById("cancelBtn");
+    const spinner = document.getElementById("spinner");
+    const statusEl = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+
+    let controller = null;
+
+    function setLoading(isLoading, msg="") {
+      generateBtn.disabled = isLoading;
+      cancelBtn.disabled = !isLoading;
+      spinner.style.display = isLoading ? "inline" : "none";
+      statusEl.textContent = msg;
+    }
+
+    cancelBtn.addEventListener("click", () => {
+      if (controller) controller.abort();
+      setLoading(false, "Request canceled.");
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      resultEl.textContent = "";
+      statusEl.textContent = "";
+
+      const urlVal = document.getElementById("url").value.trim();
+      if (!urlVal) {
+        statusEl.textContent = "Please paste a URL.";
+        return;
+      }
+
+      controller = new AbortController();
+      const signal = controller.signal;
+
+      const formData = new FormData();
+      formData.append("url", urlVal);
+
+      setLoading(true, "Generating transcript…");
+
+      try {
+        // Optional: client-side timeout (e.g., 5 minutes)
+        const timeoutMs = 5 * 60 * 1000;
+        const timeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Request timed out.")), timeoutMs)
+        );
+
+        const fetchReq = fetch("/transcript", { method: "POST", body: formData, signal });
+
+        const res = await Promise.race([fetchReq, timeout]);
+
+        if (!res.ok) {
+          const maybeJson = await res.text();
+          throw new Error(`Server error (${res.status}). ${maybeJson}`);
+        }
+
+        const text = await res.text();
+        resultEl.textContent = text || "(Empty transcript)";
+        statusEl.textContent = "Done.";
+      } catch (err) {
+        if (err.name === "AbortError") {
+          statusEl.textContent = "Request canceled.";
+        } else {
+          statusEl.textContent = `Error: ${err.message}`;
+        }
+      } finally {
+        setLoading(false);
+        controller = null;
+      }
+    });
+  </script>
+</body>
+</html>
